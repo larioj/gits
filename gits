@@ -1,0 +1,44 @@
+#!/bin/bash
+
+set -e
+
+_read() {
+  TMP_REMOTE=$(mktemp)
+  TMP_LOCAL=$(mktemp)
+  ssh $GITS_REMOTE "cd $GIT_REPO && git diff" > $TMP_REMOTE
+  cd $GIT_REPO && git diff > $TMP_LOCAL
+  DD="$(diff $TMP_REMOTE $TMP_LOCAL)"
+  if [[ -n "$DD" ]] ; then
+    cd $GIT_REPO && git stash && git apply $1
+  fi
+}
+
+_write() {
+  TMP_REMOTE=$(mktemp)
+  TMP_LOCAL=$(mktemp)
+  ssh $GITS_REMOTE "cd $GIT_REPO && git diff" > $TMP_REMOTE
+  cd $GIT_REPO && git diff > $TMP_LOCAL
+  DD="$(diff $TMP_REMOTE $TMP_LOCAL)"
+  if [[ -n "$DD" ]] ; then
+    TMP_REMOTE=$(ssh $GITS_REMOTE 'mktemp')
+    scp $1 $GITS_REMOTE:$TMP_REMOTE
+    ssh $GITS_REMOTE "cd $GIT_REPO && git stash && git apply $TMP_REMOTE"
+  fi
+}
+
+_force_push_local() {
+  cd $GIT_REPO && git push -f
+  $BRANCH=$(git branch --show-current)
+  ssh $GITS_REMOTE "cd $GIT_REPO && git stash && git fetch origin $BRANCH && git reset --hard origin/$BRANCH"
+}
+
+_commit_remote() {
+  ssh $GITS_REMOTE "cd $GIT_REPO && git commit -m \"$1\" && git push"
+  cd $GIT_REPO && git stash && git pull origin $(git branch --show-current)
+}
+
+_ssh() {
+  _write
+  ssh $GITS_REMOTE "$@"
+  _read
+}
